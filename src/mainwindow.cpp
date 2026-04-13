@@ -20,18 +20,16 @@
 #include "mainwindow.h"
 #include "processprovider.h"
 #include "dockadaptor.h"
+#include "xwindowinterface.h"
+#include "iconthemeimageprovider.h"
 
 #include <QGuiApplication>
 #include <QScreen>
-
 #include <QQmlEngine>
 #include <QQmlContext>
 #include <QQmlProperty>
 #include <QQuickItem>
-#include <QMetaEnum>
 
-#include <NETWM>
-#include <KWindowSystem>
 #include <KWindowEffects>
 
 MainWindow::MainWindow(QQuickView *parent)
@@ -51,16 +49,16 @@ MainWindow::MainWindow(QQuickView *parent)
 
     setDefaultAlphaBuffer(false);
     setColor(Qt::transparent);
-
     setFlags(Qt::FramelessWindowHint | Qt::WindowDoesNotAcceptFocus);
-    // KWindowSystem::setOnDesktop(winId(), NET::OnAllDesktops);
-    KWindowSystem::setType(winId(), NET::Dock);
 
-    engine()->rootContext()->setContextProperty("appModel", m_appModel);
-    engine()->rootContext()->setContextProperty("process", new ProcessProvider);
-    engine()->rootContext()->setContextProperty("Settings", m_settings);
-    engine()->rootContext()->setContextProperty("mainWindow", this);
-    engine()->rootContext()->setContextProperty("trash", m_trashManager);
+    // 注册图标 provider，QML 里用 "image://icontheme/图标名" 加载系统图标
+    engine()->addImageProvider(QStringLiteral("icontheme"), new IconThemeImageProvider);
+
+    engine()->rootContext()->setContextProperty(QStringLiteral("appModel"), m_appModel);
+    engine()->rootContext()->setContextProperty(QStringLiteral("process"), new ProcessProvider);
+    engine()->rootContext()->setContextProperty(QStringLiteral("Settings"), m_settings);
+    engine()->rootContext()->setContextProperty(QStringLiteral("mainWindow"), this);
+    engine()->rootContext()->setContextProperty(QStringLiteral("trash"), m_trashManager);
 
     setSource(QUrl(QStringLiteral("qrc:/qml/main.qml")));
     setScreen(qApp->primaryScreen());
@@ -73,17 +71,15 @@ MainWindow::MainWindow(QQuickView *parent)
 
     m_showTimer->setSingleShot(true);
     m_showTimer->setInterval(200);
-    connect(m_showTimer, &QTimer::timeout, this, [=] { setVisible(true); });
+    connect(m_showTimer, &QTimer::timeout, this, [this] { setVisible(true); });
 
     m_hideTimer->setSingleShot(true);
     m_hideTimer->setInterval(500);
     connect(m_hideTimer, &QTimer::timeout, this, &MainWindow::onHideTimeout);
 
-    // When the current window changes.
     connect(m_activity, &Activity::launchPadChanged, this, &MainWindow::onVisibilityChanged);
     connect(m_activity, &Activity::existsWindowMaximizedChanged, this, &MainWindow::onVisibilityChanged);
 
-    // Screen change.
     connect(qGuiApp, &QGuiApplication::primaryScreenChanged, this, &MainWindow::onPrimaryScreenChanged);
     connect(screen(), &QScreen::virtualGeometryChanged, this, &MainWindow::resizeWindow);
     connect(screen(), &QScreen::geometryChanged, this, &MainWindow::resizeWindow);
@@ -99,145 +95,101 @@ MainWindow::~MainWindow()
 {
 }
 
-void MainWindow::add(const QString &desktop)
-{
-    m_appModel->addItem(desktop);
-}
+void MainWindow::add(const QString &desktop)    { m_appModel->addItem(desktop); }
+void MainWindow::remove(const QString &desktop) { m_appModel->removeItem(desktop); }
+bool MainWindow::pinned(const QString &desktop) { return m_appModel->isDesktopPinned(desktop); }
 
-void MainWindow::remove(const QString &desktop)
-{
-    m_appModel->removeItem(desktop);
-}
-
-bool MainWindow::pinned(const QString &desktop)
-{
-    return m_appModel->isDesktopPinned(desktop);
-}
-
-QRect MainWindow::primaryGeometry() const
-{
-    return geometry();
-}
-
-int MainWindow::direction() const
-{
-    return DockSettings::self()->direction();
-}
-
-int MainWindow::visibility() const
-{
-    return DockSettings::self()->visibility();
-}
+QRect MainWindow::primaryGeometry() const { return geometry(); }
+int MainWindow::direction() const         { return DockSettings::self()->direction(); }
+int MainWindow::visibility() const        { return DockSettings::self()->visibility(); }
+int MainWindow::style() const             { return DockSettings::self()->style(); }
 
 void MainWindow::setDirection(int direction)
 {
     DockSettings::self()->setDirection(static_cast<DockSettings::Direction>(direction));
 }
-
-void MainWindow::setIconSize(int iconSize)
-{
-    DockSettings::self()->setIconSize(iconSize);
-}
-
+void MainWindow::setIconSize(int iconSize)     { DockSettings::self()->setIconSize(iconSize); }
 void MainWindow::setVisibility(int visibility)
 {
     DockSettings::self()->setVisibility(static_cast<DockSettings::Visibility>(visibility));
 }
-
-int MainWindow::style() const
-{
-    return DockSettings::self()->style();
-}
-
 void MainWindow::setStyle(int style)
 {
     DockSettings::self()->setStyle(static_cast<DockSettings::Style>(style));
 }
-
-void MainWindow::updateSize()
-{
-    resizeWindow();
-}
+void MainWindow::updateSize() { resizeWindow(); }
 
 QRect MainWindow::windowRect() const
 {
-    const QRect screenGeometry = screen()->geometry();
+    const QRect screenGeometry   = screen()->geometry();
     const QRect availableGeometry = screen()->availableGeometry();
 
     bool isHorizontal = m_settings->direction() == DockSettings::Bottom;
-    bool compositing = false;
-    QQuickItem *item = qobject_cast<QQuickItem *>(rootObject());
+    bool compositing  = false;
 
-    if (item) {
+    if (QQuickItem *item = qobject_cast<QQuickItem *>(rootObject()))
         compositing = item->property("compositing").toBool();
-    }
 
-    QSize newSize(0, 0);
+    QSize  newSize(0, 0);
     QPoint position(0, 0);
-    int maxLength = isHorizontal ? screenGeometry.width() - m_settings->edgeMargins()
-                                 : availableGeometry.height() - m_settings->edgeMargins();;
+    int maxLength = isHorizontal
+        ? screenGeometry.width()  - m_settings->edgeMargins()
+        : availableGeometry.height() - m_settings->edgeMargins();
 
-    // Add trash item.
     int appCount = m_appModel->rowCount() + 1;
-    int iconSize = m_settings->iconSize();
+    int iconSize  = m_settings->iconSize();
     iconSize += iconSize * 0.1;
-    int length = appCount * iconSize;
+    int length  = appCount * iconSize;
     int margins = compositing ? DockSettings::self()->edgeMargins() / 2 : 0;
 
     if (length >= maxLength) {
         iconSize = (maxLength - (maxLength % appCount)) / appCount;
-        length = appCount * iconSize;
+        length   = appCount * iconSize;
     }
 
     switch (m_settings->style()) {
-    case DockSettings::Round: {
+    case DockSettings::Round:
         switch (m_settings->direction()) {
         case DockSettings::Left:
-            newSize = QSize(iconSize, length);
-            position.setX(screenGeometry.x() + margins);
-            // Handle the top statusbar.
-            position.setY(availableGeometry.y() + (availableGeometry.height() - newSize.height()) / 2);
+            newSize   = QSize(iconSize, length);
+            position  = { screenGeometry.x() + margins,
+                          availableGeometry.y() + (availableGeometry.height() - newSize.height()) / 2 };
             break;
         case DockSettings::Bottom:
-            newSize = QSize(length, iconSize);
-            position.setX(screenGeometry.x() + (screenGeometry.width() - newSize.width()) / 2);
-            position.setY(screenGeometry.y() + screenGeometry.height() - newSize.height() - margins);
+            newSize   = QSize(length, iconSize);
+            position  = { screenGeometry.x() + (screenGeometry.width() - newSize.width()) / 2,
+                          screenGeometry.y() + screenGeometry.height() - newSize.height() - margins };
             break;
         case DockSettings::Right:
-            newSize = QSize(iconSize, length);
-            position.setX(screenGeometry.x() + screenGeometry.width() - newSize.width() - margins);
-            position.setY(availableGeometry.y() + (availableGeometry.height() - newSize.height()) / 2);
+            newSize   = QSize(iconSize, length);
+            position  = { screenGeometry.x() + screenGeometry.width() - newSize.width() - margins,
+                          availableGeometry.y() + (availableGeometry.height() - newSize.height()) / 2 };
             break;
-        default:
-            break;
+        default: break;
         }
+        break;
 
-        break;
-    }
-    case DockSettings::Straight: {
+    case DockSettings::Straight:
         switch (m_settings->direction()) {
         case DockSettings::Left:
-            newSize = QSize(iconSize, screenGeometry.height());
-            position.setX(screenGeometry.x());
-            position.setY(screenGeometry.y());
+            newSize  = QSize(iconSize, screenGeometry.height());
+            position = { screenGeometry.x(), screenGeometry.y() };
             break;
         case DockSettings::Bottom:
-            newSize = QSize(screenGeometry.width(), iconSize);
-            position.setX(screenGeometry.x());
-            position.setY(screenGeometry.y() + screenGeometry.height() - newSize.height());
+            newSize  = QSize(screenGeometry.width(), iconSize);
+            position = { screenGeometry.x(),
+                         screenGeometry.y() + screenGeometry.height() - newSize.height() };
             break;
         case DockSettings::Right:
-            newSize = QSize(iconSize, screenGeometry.height());
-            position.setX(screenGeometry.x() + screenGeometry.width() - newSize.width());
-            position.setY(screenGeometry.y() + screenGeometry.height() - newSize.height());
+            newSize  = QSize(iconSize, screenGeometry.height());
+            position = { screenGeometry.x() + screenGeometry.width() - newSize.width(),
+                         screenGeometry.y() + screenGeometry.height() - newSize.height() };
             break;
-        default:
-            break;
+        default: break;
         }
         break;
-    }
-    default:
-        break;
+
+    default: break;
     }
 
     return QRect(position, newSize);
@@ -247,27 +199,12 @@ void MainWindow::resizeWindow()
 {
     setGeometry(windowRect());
     updateViewStruts();
-
     emit resizingFished();
 }
 
 void MainWindow::initScreens()
 {
-    switch (m_settings->direction()) {
-// TODO
-//    case DockSettings::Left:
-//        setScreen(qGuiApp->screens().first());
-//        break;
-//    case DockSettings::Right:
-//        setScreen(qGuiApp->screens().last());
-//        break;
-//    case DockSettings::Bottom:
-//        setScreen(qGuiApp->primaryScreen());
-//        break;
-    default:
-        setScreen(qGuiApp->primaryScreen());
-        break;
-    }
+    setScreen(qGuiApp->primaryScreen());
 
     if (m_fakeWindow) {
         m_fakeWindow->setScreen(screen());
@@ -279,27 +216,36 @@ void MainWindow::initSlideWindow()
 {
     KWindowEffects::SlideFromLocation location = KWindowEffects::NoEdge;
 
-    if (m_settings->direction() == DockSettings::Left)
-        location = KWindowEffects::LeftEdge;
-    else if (m_settings->direction() == DockSettings::Right)
-        location = KWindowEffects::RightEdge;
-    else if (m_settings->direction() == DockSettings::Bottom)
-        location = KWindowEffects::BottomEdge;
+    switch (m_settings->direction()) {
+    case DockSettings::Left:   location = KWindowEffects::LeftEdge;   break;
+    case DockSettings::Right:  location = KWindowEffects::RightEdge;  break;
+    case DockSettings::Bottom: location = KWindowEffects::BottomEdge; break;
+    default: break;
+    }
 
-    KWindowEffects::slideWindow(winId(), location);
+    // KF6：用 QWindow* 重载，Wayland 可用
+    KWindowEffects::slideWindow(this, location);
 }
 
 void MainWindow::updateViewStruts()
 {
-    bool compositing = false;
-    QQuickItem *item = qobject_cast<QQuickItem *>(rootObject());
-
-    if (item) {
-        compositing = item->property("compositing").toBool();
-    }
-
     if (m_settings->visibility() == DockSettings::AlwaysShow || m_activity->launchPad()) {
-        XWindowInterface::instance()->setViewStruts(this, m_settings->direction(), geometry(), compositing);
+        const QRect r = windowRect();
+        int exclusiveSize = 0;
+
+        // DockSettings 只有 Left / Bottom / Right 三个方向，没有 Top
+        switch (m_settings->direction()) {
+        case DockSettings::Left:
+        case DockSettings::Right:
+            exclusiveSize = r.width();
+            break;
+        case DockSettings::Bottom:
+        default:
+            exclusiveSize = r.height();
+            break;
+        }
+
+        XWindowInterface::instance()->setViewStruts(this, exclusiveSize);
     } else {
         clearViewStruts();
     }
@@ -317,26 +263,19 @@ void MainWindow::createFakeWindow()
         m_fakeWindow->setScreen(screen());
         m_fakeWindow->updateGeometry();
 
-        connect(m_fakeWindow, &FakeWindow::containsMouseChanged, this, [=](bool contains) {
+        connect(m_fakeWindow, &FakeWindow::containsMouseChanged, this, [this](bool contains) {
             switch (m_settings->visibility()) {
             case DockSettings::AlwaysHide:
-            case DockSettings::IntellHide:{
+            case DockSettings::IntellHide:
                 if (contains) {
                     m_hideTimer->stop();
-
-                    // reionwong: The mouse is moved to fakewindow,
-                    // if the dock is not displayed,
-                    // it will start to display.
-                    if (!isVisible() && !m_showTimer->isActive()) {
+                    if (!isVisible() && !m_showTimer->isActive())
                         m_showTimer->start();
-                    }
                 } else {
                     if (!m_hideBlocked)
                         m_hideTimer->start();
                 }
-
                 break;
-            }
             default:
                 break;
             }
@@ -347,7 +286,6 @@ void MainWindow::createFakeWindow()
 void MainWindow::deleteFakeWindow()
 {
     if (m_fakeWindow) {
-        // removeEventFilter(this);
         disconnect(m_fakeWindow);
         m_fakeWindow->deleteLater();
         m_fakeWindow = nullptr;
@@ -365,23 +303,15 @@ void MainWindow::onPositionChanged()
 {
     initScreens();
 
-    if (m_settings->visibility() == DockSettings::AlwaysHide ||
-            m_settings->visibility() == DockSettings::IntellHide) {
-        setVisible(false);
-        initSlideWindow();
-        // Setting geometry needs to be displayed, otherwise it will be invalid.
-        setVisible(true);
-        setGeometry(windowRect());
-        updateViewStruts();
+    const bool hiding = (m_settings->visibility() == DockSettings::AlwaysHide ||
+                         m_settings->visibility() == DockSettings::IntellHide);
 
-        m_hideTimer->start();
-    } else if (m_settings->visibility() == DockSettings::AlwaysShow) {
-        setVisible(false);
-        initSlideWindow();
-        setVisible(true);
-        setGeometry(windowRect());
-        updateViewStruts();
-    }
+    setVisible(false);
+    initSlideWindow();
+    if (!hiding) setVisible(true);
+    setGeometry(windowRect());
+    updateViewStruts();
+    if (hiding) m_hideTimer->start();
 
     emit directionChanged();
 }
@@ -390,7 +320,6 @@ void MainWindow::onIconSizeChanged()
 {
     setGeometry(windowRect());
     updateViewStruts();
-
     emit iconSizeChanged();
 }
 
@@ -405,42 +334,29 @@ void MainWindow::onVisibilityChanged()
         return;
     }
 
-    // Always show
-    // Must remain displayed when launchpad is opened.
     if (m_settings->visibility() == DockSettings::AlwaysShow) {
         m_hideTimer->stop();
-
         setGeometry(windowRect());
         setVisible(true);
         updateViewStruts();
-
-        // Delete fakewindow
-        if (m_fakeWindow) {
+        if (m_fakeWindow)
             deleteFakeWindow();
-        }
+        return;
     }
 
     if (m_settings->visibility() == DockSettings::IntellHide) {
         clearViewStruts();
         setGeometry(windowRect());
-
-        if (m_activity->existsWindowMaximized() && !m_hideBlocked) {
-            setVisible(false);
-        } else {
-            setVisible(true);
-        }
-
+        setVisible(!m_activity->existsWindowMaximized() || m_hideBlocked);
         if (!m_fakeWindow)
             createFakeWindow();
+        return;
     }
 
-    // Always hide
     if (m_settings->visibility() == DockSettings::AlwaysHide) {
         clearViewStruts();
         setGeometry(windowRect());
         setVisible(m_hideBlocked);
-
-        // Create
         if (!m_fakeWindow)
             createFakeWindow();
     }
@@ -450,12 +366,9 @@ void MainWindow::onHideTimeout()
 {
     if (m_activity->launchPad())
         return;
-
     if (m_settings->visibility() == DockSettings::IntellHide
-            && !m_activity->existsWindowMaximized()) {
+            && !m_activity->existsWindowMaximized())
         return;
-    }
-
     setVisible(false);
 }
 
@@ -463,35 +376,29 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *e)
 {
     switch (e->type()) {
     case QEvent::Enter:
-        if (m_fakeWindow)
-            m_hideTimer->stop();
+        if (m_fakeWindow) m_hideTimer->stop();
         m_hideBlocked = true;
         break;
     case QEvent::Leave:
-        if (m_fakeWindow)
-            m_hideTimer->start();
+        if (m_fakeWindow) m_hideTimer->start();
         m_hideBlocked = false;
         break;
     case QEvent::DragEnter:
     case QEvent::DragMove:
-        if (m_fakeWindow)
-            m_hideTimer->stop();
+        if (m_fakeWindow) m_hideTimer->stop();
         break;
     case QEvent::DragLeave:
     case QEvent::Drop:
-        if (m_fakeWindow)
-            m_hideTimer->stop();
+        if (m_fakeWindow) m_hideTimer->stop();
         break;
     default:
         break;
     }
-
     return QQuickView::eventFilter(obj, e);
 }
 
 void MainWindow::resizeEvent(QResizeEvent *e)
 {
     emit primaryGeometryChanged();
-
     QQuickView::resizeEvent(e);
 }

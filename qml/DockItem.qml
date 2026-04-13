@@ -1,54 +1,41 @@
 /*
  * Copyright (C) 2021 CutefishOS Team.
- *
- * Author:     rekols <revenmartin@gmail.com>
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * Ported to Qt6 / Wayland (no FishUI dependency)
  */
 
-import QtQuick 2.12
-import QtQuick.Controls 2.12
-import QtGraphicalEffects 1.0
+import QtQuick
+import QtQuick.Controls
 import Cutefish.Dock 1.0
-import FishUI 1.0 as FishUI
 
 Item {
     id: control
 
-    property bool isLeft: Settings.direction === DockSettings.Left
-    property bool isRight: Settings.direction === DockSettings.Right
+    property bool isLeft:   Settings.direction === DockSettings.Left
+    property bool isRight:  Settings.direction === DockSettings.Right
     property bool isBottom: Settings.direction === DockSettings.Bottom
 
     property var iconSize: root.isHorizontal ? control.height * iconSizeRatio
-                                             : control.width * iconSizeRatio
+                                             : control.width  * iconSizeRatio
 
-    property bool draggable: false
-    property int dragItemIndex
+    property bool draggable:    false
+    property int  dragItemIndex
 
-    property alias icon: icon
+    property alias icon:      icon
     property alias mouseArea: iconArea
-    property alias dropArea: iconDropArea
+    property alias dropArea:  iconDropArea
 
     property bool enableActivateDot: true
-    property bool isActive: false
+    property bool isActive:  false
 
-    property var popupText
-
+    property var  popupText
     property double iconSizeRatio: 0.8
-    property var iconName
+    property var  iconName
 
     property bool dragStarted: false
+
+    // Spacing used for popupTips positioning (replaces FishUI.Units)
+    readonly property int smallSpacing: 4
+    readonly property int largeSpacing: 12
 
     signal positionChanged()
     signal released()
@@ -59,35 +46,34 @@ Item {
     signal doubleClicked(var mouse)
     signal dropped(var drop)
 
-    Drag.active: mouseArea.drag.active && control.draggable
-    Drag.dragType: Drag.Automatic
+    Drag.active:           mouseArea.drag.active && control.draggable
+    Drag.dragType:         Drag.Automatic
     Drag.supportedActions: Qt.MoveAction
-    Drag.hotSpot.x: icon.width / 2
-    Drag.hotSpot.y: icon.height / 2
+    Drag.hotSpot.x:        icon.width  / 2
+    Drag.hotSpot.y:        icon.height / 2
 
-    Drag.onDragStarted:  {
-        dragStarted = true
-    }
+    Drag.onDragStarted:  { dragStarted = true  }
+    Drag.onDragFinished: { dragStarted = false }
 
-    Drag.onDragFinished: {
-        dragStarted = false
-    }
-
-    FishUI.IconItem {
+    // Icon
+    Image {
         id: icon
         anchors.centerIn: parent
-        width: control.iconSize
+        width:  control.iconSize
         height: control.iconSize
-        source: iconName
-
+        source: control.iconName ? "image://icontheme/" + control.iconName : ""
+        sourceSize: Qt.size(width, height)
+        fillMode: Image.PreserveAspectFit
         visible: !dragStarted
+        smooth: true
+        asynchronous: true
 
-        ColorOverlay {
-            id: iconColorize
-            anchors.fill: icon
-            source: icon
+        // Dim on press (replaces ColorOverlay)
+        Rectangle {
+            anchors.fill: parent
             color: "#000000"
-            opacity: iconArea.pressed && !mouseArea.drag.active ? 0.4 : 0
+            opacity: iconArea.pressed && !mouseArea.drag.active ? 0.35 : 0
+            radius: 4
         }
     }
 
@@ -105,19 +91,19 @@ Item {
         acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
         drag.axis: Drag.XAndYAxis
 
-        onClicked: {
+        onClicked: (mouse) => {
             if (mouse.button === Qt.RightButton)
                 control.rightClicked(mouse)
             else
                 control.clicked(mouse)
         }
 
-        onPressed: {
+        onPressed: (mouse) => {
             control.pressed(mouse)
             popupTips.hide()
         }
 
-        onPositionChanged: {
+        onPositionChanged: (mouse) => {
             if (pressed) {
                 if (control.draggable && mouse.source !== Qt.MouseEventSynthesizedByQt) {
                     drag.target = icon
@@ -128,11 +114,11 @@ Item {
                     drag.target = null
                 }
             }
-
             control.positionChanged()
         }
 
-        onPressAndHold : control.pressAndHold(mouse)
+        onPressAndHold: (mouse) => control.pressAndHold(mouse)
+
         onReleased: {
             drag.target = null
             control.released()
@@ -143,14 +129,17 @@ Item {
                 popupTips.popupText = control.popupText
 
                 if (Settings.direction === DockSettings.Left)
-                    popupTips.position = Qt.point(root.width + FishUI.Units.largeSpacing,
-                                                  control.mapToGlobal(0, 0).y + (control.height / 2 - popupTips.height / 2))
+                    popupTips.position = Qt.point(
+                        root.width + control.largeSpacing,
+                        control.mapToGlobal(0, 0).y + (control.height / 2 - popupTips.height / 2))
                 else if (Settings.direction === DockSettings.Right)
-                    popupTips.position = Qt.point(control.mapToGlobal(0, 0).x - popupTips.width - FishUI.Units.smallSpacing / 2,
-                                                  control.mapToGlobal(0, 0).y + (control.height / 2 - popupTips.height / 2))
+                    popupTips.position = Qt.point(
+                        control.mapToGlobal(0, 0).x - popupTips.width - control.smallSpacing / 2,
+                        control.mapToGlobal(0, 0).y + (control.height / 2 - popupTips.height / 2))
                 else
-                    popupTips.position = Qt.point(control.mapToGlobal(0, 0).x + (control.width / 2 - popupTips.width / 2),
-                                                  control.mapToGlobal(0, 0).y - popupTips.height - FishUI.Units.smallSpacing)
+                    popupTips.position = Qt.point(
+                        control.mapToGlobal(0, 0).x + (control.width / 2 - popupTips.width / 2),
+                        control.mapToGlobal(0, 0).y - popupTips.height - control.smallSpacing)
 
                 popupTips.show()
             } else {
@@ -159,42 +148,31 @@ Item {
         }
     }
 
+    // Active indicator dot
     Rectangle {
         id: activeRect
 
-        property var leftX: 2
-        property var leftY: (parent.height - height) / 2
+        property var circleSize:  isBottom ? control.height * 0.06 : control.width  * 0.06
+        property var activeLength: control.height * 0.5
 
-        property var bottomX: (parent.width - width) / 2
-        property var bottomY: icon.y + icon.height + activeRect.height / 2 - 1
-
-        property var rightX: icon.x + icon.width + activeRect.width / 2 - 1
-        property var rightY: (parent.height - height) / 2
-
-        property var circleSize: isBottom ? control.height * 0.06 : control.width * 0.06
-        property var activeLength: isBottom ? control.height * 0.5 : control.height * 0.5
-
-        width: !isBottom ? circleSize : (isActive ? activeLength : circleSize)
-        height: !isBottom ? (isActive ? activeLength : circleSize) : circleSize
-        radius: !isBottom ? width / 2 : height / 2
+        width:   !isBottom ? circleSize : (isActive ? activeLength : circleSize)
+        height:  !isBottom ? (isActive ? activeLength : circleSize) : circleSize
+        radius:  !isBottom ? width / 2 : height / 2
         visible: enableActivateDot && !dragStarted
-        color: FishUI.Theme.textColor
+        color:   "#888888"
 
-        x: isLeft ? leftX : isBottom ? bottomX : rightX
-        y: isLeft ? leftY : isBottom ? bottomY : rightY
+        x: isLeft   ? 2
+         : isBottom ? (parent.width  - width)  / 2
+         :             icon.x + icon.width + activeRect.width / 2 - 1
 
-        Behavior on width {
-            NumberAnimation {
-                duration: isBottom ? 250 : 0
-                easing.type: Easing.InOutSine
-            }
-        }
+        y: isLeft   ? (parent.height - height) / 2
+         : isBottom ? icon.y + icon.height + activeRect.height / 2 - 1
+         :            (parent.height - height) / 2
 
-        Behavior on height {
-            NumberAnimation {
-                duration: !isBottom ? 250 : 0
-                easing.type: Easing.InOutSine
-            }
-        }
+        Behavior on width  { NumberAnimation { duration: isBottom  ? 250 : 0; easing.type: Easing.InOutSine } }
+        Behavior on height { NumberAnimation { duration: !isBottom ? 250 : 0; easing.type: Easing.InOutSine } }
     }
+
+    // Simple popup tooltip (replaces FishUI.PopupTips calls)
+    // popupTips is defined in main.qml and accessed via id
 }

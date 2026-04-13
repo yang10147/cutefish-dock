@@ -20,18 +20,14 @@
 #include "fakewindow.h"
 #include "docksettings.h"
 
-// Qt
-#include <QDebug>
 #include <QApplication>
-#include <QSurfaceFormat>
-#include <QQuickView>
 #include <QScreen>
 #include <QTimer>
+#include <QDebug>
 
-#include <KWindowSystem>
-
-// X11
-#include <NETWM>
+// LayerShellQt：让 FakeWindow 也成为 layer-shell 表面，
+// 这样它能贴在屏幕边缘感知鼠标进入，不会被其他窗口遮挡
+#include <LayerShellQt/Window>
 
 FakeWindow::FakeWindow(QQuickView *parent)
     : QQuickView(parent)
@@ -44,21 +40,16 @@ FakeWindow::FakeWindow(QQuickView *parent)
              Qt::WindowStaysOnTopHint |
              Qt::NoDropShadowWindowHint |
              Qt::WindowDoesNotAcceptFocus);
-    // setScreen(qApp->primaryScreen());
-    // updateGeometry();
     show();
 
     m_delayedMouseTimer.setSingleShot(true);
     m_delayedMouseTimer.setInterval(50);
     connect(&m_delayedMouseTimer, &QTimer::timeout, this, [this]() {
-        if (m_delayedContainsMouse) {
-            setContainsMouse(true);
-        } else {
-            setContainsMouse(false);
-        }
+        setContainsMouse(m_delayedContainsMouse);
     });
 
-    connect(DockSettings::self(), &DockSettings::directionChanged, this, &FakeWindow::updateGeometry);
+    connect(DockSettings::self(), &DockSettings::directionChanged,
+            this, &FakeWindow::updateGeometry);
 }
 
 bool FakeWindow::containsMouse() const
@@ -68,7 +59,33 @@ bool FakeWindow::containsMouse() const
 
 bool FakeWindow::event(QEvent *e)
 {
-    if (e->type() == QEvent::DragEnter || e->type() == QEvent::DragMove) {
+    if (e->type() == QEvent::Show) {
+        // Wayland 下用 LayerShellQt 让 FakeWindow 贴边，代替 NET::SkipTaskbar 等 X11 标志
+        if (auto *lsw = LayerShellQt::Window::get(this)) {
+            lsw->setLayer(LayerShellQt::Window::LayerTop);
+
+            // FakeWindow 跟随主 Dock 方向贴边
+            LayerShellQt::Window::Anchors anchors;
+            switch (DockSettings::self()->direction()) {
+            case DockSettings::Left:
+                anchors.setFlag(LayerShellQt::Window::AnchorLeft);
+                break;
+            case DockSettings::Right:
+                anchors.setFlag(LayerShellQt::Window::AnchorRight);
+                break;
+            case DockSettings::Bottom:
+            default:
+                anchors.setFlag(LayerShellQt::Window::AnchorBottom);
+                break;
+            }
+            lsw->setAnchors(anchors);
+
+            // exclusive zone = 0：不占用空间，只感知鼠标
+            lsw->setExclusiveZone(0);
+            lsw->setKeyboardInteractivity(LayerShellQt::Window::KeyboardInteractivityNone);
+        }
+
+    } else if (e->type() == QEvent::DragEnter || e->type() == QEvent::DragMove) {
         if (!m_containsMouse) {
             m_delayedContainsMouse = false;
             m_delayedMouseTimer.stop();
@@ -77,16 +94,12 @@ bool FakeWindow::event(QEvent *e)
         }
     } else if (e->type() == QEvent::Enter) {
         m_delayedContainsMouse = true;
-        if (!m_delayedMouseTimer.isActive()) {
+        if (!m_delayedMouseTimer.isActive())
             m_delayedMouseTimer.start();
-        }
     } else if (e->type() == QEvent::Leave || e->type() == QEvent::DragLeave) {
         m_delayedContainsMouse = false;
-        if (!m_delayedMouseTimer.isActive()) {
+        if (!m_delayedMouseTimer.isActive())
             m_delayedMouseTimer.start();
-        }
-    } else if (e->type() == QEvent::Show) {
-        KWindowSystem::setState(winId(), NET::SkipTaskbar | NET::SkipPager | NET::SkipSwitcher);
     }
 
     return QQuickView::event(e);
@@ -102,27 +115,27 @@ void FakeWindow::setContainsMouse(bool contains)
 
 void FakeWindow::updateGeometry()
 {
-    int length = 5;
+    const int length = 5;
     const QRect screenRect = qApp->primaryScreen()->geometry();
     QRect newRect;
 
-    switch (DockSettings::self()->direction())
-    {
-        case DockSettings::Left:
-            newRect = QRect(screenRect.x() - (length * 2),
-                            (screenRect.height() + length) / 2,
-                            length, screenRect.height());
-            break;
-        case DockSettings::Bottom:
-            newRect = QRect(screenRect.x(),
-                            screenRect.y() + screenRect.height() - length,
-                            screenRect.width(), length);
-            break;
-        case DockSettings::Right:
-            newRect = QRect(screenRect.x() + screenRect.width() - length,
-                            screenRect.y(),
-                            length, screenRect.height());
-            break;
+    switch (DockSettings::self()->direction()) {
+    case DockSettings::Left:
+        newRect = QRect(screenRect.x(),
+                        screenRect.y(),
+                        length, screenRect.height());
+        break;
+    case DockSettings::Right:
+        newRect = QRect(screenRect.x() + screenRect.width() - length,
+                        screenRect.y(),
+                        length, screenRect.height());
+        break;
+    case DockSettings::Bottom:
+    default:
+        newRect = QRect(screenRect.x(),
+                        screenRect.y() + screenRect.height() - length,
+                        screenRect.width(), length);
+        break;
     }
 
     setGeometry(newRect);

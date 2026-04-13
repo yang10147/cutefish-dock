@@ -1,67 +1,44 @@
 /*
  * Copyright (C) 2021 CutefishOS Team.
- *
- * Author:     rekols <revenmartin@gmail.com>
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * Ported to Qt6 / Wayland (no FishUI dependency)
  */
 
-import QtQuick 2.12
-import QtQuick.Controls 2.12
+import QtQuick
+import QtQuick.Controls
 import Cutefish.Dock 1.0
-import FishUI 1.0 as FishUI
 
 DockItem {
     id: appItem
 
-    property var windowCount: model.windowCount
-    property var dragSource: null
+    property var windowCount:  model.windowCount
+    property var dragSource:   null
 
-    iconName: model.iconName ? model.iconName : "application-x-desktop"
-    isActive: model.isActive
-    popupText: model.visibleName
+    iconName:          model.iconName ? model.iconName : "application-x-desktop"
+    isActive:          model.isActive
+    popupText:         model.visibleName
     enableActivateDot: windowCount !== 0
-    draggable: !model.fixed
-    dragItemIndex: index
+    draggable:         !model.fixed
+    dragItemIndex:     index
 
-    onXChanged: {
-        if (windowCount > 0)
-            updateGeometry()
+    onXChanged:           { if (windowCount > 0) updateGeometry() }
+    onYChanged:           { if (windowCount > 0) updateGeometry() }
+    onWindowCountChanged: { if (windowCount > 0) updateGeometry() }
+    onPositionChanged:    updateGeometry()
+    onPressed:            updateGeometry()
+
+    onRightClicked: {
+        if (model.appId !== "cutefish-launcher")
+            contextMenu.popup()
     }
 
-    onYChanged: {
-        if (windowCount > 0)
-            updateGeometry()
-    }
-
-    onWindowCountChanged: {
-        if (windowCount > 0)
-            updateGeometry()
-    }
-
-    onPositionChanged: updateGeometry()
-    onPressed: updateGeometry()
-    onRightClicked: if (model.appId !== "cutefish-launcher") contextMenu.show()
-
-    onClicked: {
+    onClicked: (mouse) => {
         if (mouse.button === Qt.LeftButton)
             appModel.clicked(model.appId)
         else if (mouse.button === Qt.MiddleButton)
             appModel.openNewInstance(model.appId)
     }
 
-    dropArea.onEntered: {
+    dropArea.onEntered: (drag) => {
         appItem.dragSource = drag.source
         dropTimer.restart()
     }
@@ -81,14 +58,14 @@ DockItem {
         interval: 300
         onTriggered: {
             if (appItem.dragSource)
-                appModel.move(appItem.dragSource.dragItemIndex,
-                              appItem.dragItemIndex)
+                appModel.move(appItem.dragSource.dragItemIndex, appItem.dragItemIndex)
             else
                 appModel.raiseWindow(model.appId)
         }
     }
 
-    FishUI.DesktopMenu {
+    // 右键菜单：用 Qt6 原生 Menu 替代 FishUI.DesktopMenu
+    Menu {
         id: contextMenu
 
         MenuItem {
@@ -98,7 +75,7 @@ DockItem {
         }
 
         MenuItem {
-            text: model.visibleName
+            text: model.visibleName ? model.visibleName : ""
             visible: windowCount > 0 && model.visibleName
             onTriggered: appModel.openNewInstance(model.appId)
         }
@@ -107,7 +84,10 @@ DockItem {
             text: model.isPinned ? qsTr("Unpin") : qsTr("Pin")
             visible: model.desktopFile !== ""
             onTriggered: {
-                model.isPinned ? appModel.unPin(model.appId) : appModel.pin(model.appId)
+                if (model.isPinned)
+                    appModel.unPin(model.appId)
+                else
+                    appModel.pin(model.appId)
             }
         }
 
@@ -119,13 +99,12 @@ DockItem {
         }
     }
 
-
     function updateGeometry() {
         if (model.fixed)
             return
-
-        appModel.updateGeometries(model.appId, Qt.rect(appItem.mapToGlobal(0, 0).x,
-                                                       appItem.mapToGlobal(0, 0).y,
-                                                       appItem.width, appItem.height))
+        appModel.updateGeometries(model.appId,
+            Qt.rect(appItem.mapToGlobal(0, 0).x,
+                    appItem.mapToGlobal(0, 0).y,
+                    appItem.width, appItem.height))
     }
 }

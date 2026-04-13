@@ -20,8 +20,10 @@
 #include "activity.h"
 #include "docksettings.h"
 
-#include <NETWM>
-#include <KWindowSystem>
+// KF6 Wayland 下，KWindowSystem 已移除所有跨进程窗口枚举 API：
+//   activeWindowChanged / windowChanged / windows() / activeWindow()
+// 这些都是 X11 Only，Wayland 安全模型不允许普通应用枚举其他进程的窗口。
+// Activity 在此阶段降级为静态默认值，后续通过 PlasmaWindowManagement 协议补全。
 
 static Activity *SELF = nullptr;
 
@@ -29,19 +31,18 @@ Activity *Activity::self()
 {
     if (!SELF)
         SELF = new Activity;
-
     return SELF;
 }
 
 Activity::Activity(QObject *parent)
     : QObject(parent)
     , m_existsWindowMaximized(false)
+    , m_launchPad(false)
+    , m_pid(0)
 {
-    onActiveWindowChanged();
-
-    connect(KWindowSystem::self(), &KWindowSystem::activeWindowChanged, this, &Activity::onActiveWindowChanged);
-    connect(KWindowSystem::self(), static_cast<void (KWindowSystem::*)(WId)>(&KWindowSystem::windowChanged),
-            this, &Activity::onActiveWindowChanged);
+    // Wayland 下暂无公开 API 监听窗口变化，保持默认值
+    // existsWindowMaximized = false → IntellHide 模式下 Dock 始终显示
+    // launchPad = false → 不触发 launchpad 特殊逻辑
 }
 
 bool Activity::existsWindowMaximized() const
@@ -53,41 +54,8 @@ bool Activity::launchPad() const
 {
     return m_launchPad;
 }
-#include <QDebug>
+
 void Activity::onActiveWindowChanged()
 {
-    KWindowInfo info(KWindowSystem::activeWindow(),
-                     NET::WMState | NET::WMVisibleName,
-                     NET::WM2WindowClass);
-
-    bool launchPad = info.windowClassClass() == "cutefish-launcher";
-
-    if (DockSettings::self()->visibility() == DockSettings::IntellHide) {
-        bool existsWindowMaximized = false;
-
-        for (WId wid : KWindowSystem::windows()) {
-            KWindowInfo i(wid, NET::WMState, NET::WM2WindowClass);
-
-            if (i.isMinimized() || i.hasState(NET::SkipTaskbar))
-                continue;
-
-            if (i.hasState(NET::MaxVert) || i.hasState(NET::MaxHoriz)) {
-                existsWindowMaximized = true;
-                break;
-            }
-        }
-
-        if (m_existsWindowMaximized != existsWindowMaximized) {
-            m_existsWindowMaximized = existsWindowMaximized;
-            emit existsWindowMaximizedChanged();
-        }
-    }
-
-    if (m_launchPad != launchPad) {
-        m_launchPad = launchPad;
-        emit launchPadChanged();
-    }
-
-    m_pid = info.pid();
-    m_windowClass = info.windowClassClass().toLower();
+    // Wayland 下无法获取活动窗口信息，此槽为空
 }

@@ -17,29 +17,39 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+// LayerShellQt::Shell 头文件保留，但 Qt 6.5+ 不需要手动调用 useLayerShell()
+#include <LayerShellQt/Shell>
+
 #include <QApplication>
 #include <QQmlApplicationEngine>
 #include <QQuickView>
 #include <QTranslator>
 #include <QLocale>
+#include <QFile>
 #include <QDBusConnection>
 
 #include "applicationmodel.h"
+#include "docksettings.h"
 #include "mainwindow.h"
 
 int main(int argc, char *argv[])
 {
-    QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling, true);
-    QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps, true);
+    // Qt6 已内置高 DPI 支持，这两行废弃了，删掉
+    // QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling, true);
+    // QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps, true);
+
     QApplication app(argc, argv);
 
-    if (!QDBusConnection::sessionBus().registerService("com.cutefish.Dock")) {
+    if (!QDBusConnection::sessionBus().registerService(QStringLiteral("com.cutefish.Dock"))) {
         return -1;
     }
 
-    qmlRegisterType<DockSettings>("Cutefish.Dock", 1, 0, "DockSettings");
+    qmlRegisterType<DockSettings>(QStringLiteral("Cutefish.Dock").toLatin1(), 1, 0, "DockSettings");
 
-    QString qmFilePath = QString("%1/%2.qm").arg("/usr/share/cutefish-dock/translations/").arg(QLocale::system().name());
+    const QString qmFilePath = QStringLiteral("%1/%2.qm")
+        .arg(QStringLiteral("/usr/share/cutefish-dock/translations/"))
+        .arg(QLocale::system().name());
+
     if (QFile::exists(qmFilePath)) {
         QTranslator *translator = new QTranslator(QApplication::instance());
         if (translator->load(qmFilePath)) {
@@ -51,7 +61,7 @@ int main(int argc, char *argv[])
 
     MainWindow w;
 
-    if (!QDBusConnection::sessionBus().registerObject("/Dock", &w)) {
+    if (!QDBusConnection::sessionBus().registerObject(QStringLiteral("/Dock"), &w)) {
         return -1;
     }
 

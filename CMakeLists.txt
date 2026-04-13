@@ -1,63 +1,76 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.16)
+project(cutefish-dock VERSION 0.8 LANGUAGES CXX)
 
-set(PROJECT_NAME cutefish-dock)
-project(${PROJECT_NAME})
-
-set(CMAKE_INCLUDE_CURRENT_DIR ON)
-set(CMAKE_AUTOUIC ON)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
-set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt5 CONFIG REQUIRED Widgets DBus X11Extras Concurrent LinguistTools QuickControls2)
+# ---------- Qt6 ----------
+find_package(Qt6 REQUIRED COMPONENTS
+    Core
+    Widgets
+    DBus
+    Qml
+    Quick
+    QuickControls2
+    WaylandClient
+)
 
-find_package(KF5WindowSystem REQUIRED)
+# ---------- KDE Frameworks 6 ----------
+find_package(ECM 6.0 REQUIRED NO_MODULE)
+set(CMAKE_MODULE_PATH ${ECM_MODULE_PATH})
 
-set(SRCS
-    src/applicationitem.h
-    src/applicationmodel.cpp
-    src/docksettings.cpp
-    src/iconthemeimageprovider.cpp
+include(KDEInstallDirs)
+
+find_package(KF6 REQUIRED COMPONENTS
+    WindowSystem
+    DBusAddons
+    CoreAddons
+)
+
+# ---------- LayerShellQt ----------
+find_package(LayerShellQt REQUIRED)
+
+# ---------- 源文件 ----------
+set(SOURCES
     src/main.cpp
     src/mainwindow.cpp
+    src/dockadaptor.cpp
+    src/xwindowinterface.cpp
+    src/docksettings.cpp
+    src/applicationmodel.cpp
     src/systemappmonitor.cpp
     src/systemappitem.cpp
     src/processprovider.cpp
     src/trashmanager.cpp
-    src/utils.cpp
-    src/xwindowinterface.cpp
     src/activity.cpp
-
     src/fakewindow.cpp
+    src/utils.cpp
+    src/iconthemeimageprovider.cpp
 )
 
-set(RESOURCES
-    resources.qrc
+qt6_add_resources(QML_RESOURCES qml.qrc)
+
+add_executable(cutefish-dock
+    ${SOURCES}
+    ${QML_RESOURCES}
 )
 
-qt5_add_dbus_adaptor(DBUS_SOURCES
-                     src/com.cutefish.Dock.xml
-                     src/mainwindow.h MainWindow)
-set_source_files_properties(${DBUS_SOURCES} PROPERTIES SKIP_AUTOGEN ON)
+target_include_directories(cutefish-dock PRIVATE src)
 
-add_executable(${PROJECT_NAME} ${SRCS} ${DBUS_SOURCES} ${RESOURCES})
-target_link_libraries(${PROJECT_NAME} PRIVATE
-        Qt5::Core
-        Qt5::Widgets
-        Qt5::Quick
-        Qt5::QuickControls2
-        Qt5::X11Extras
-        Qt5::Concurrent
-        Qt5::DBus
-        KF5::WindowSystem
+target_link_libraries(cutefish-dock PRIVATE
+    Qt6::Core
+    Qt6::Widgets
+    Qt6::DBus
+    Qt6::Qml
+    Qt6::Quick
+    Qt6::QuickControls2
+    Qt6::WaylandClient
+    KF6::WindowSystem
+    KF6::DBusAddons
+    KF6::CoreAddons
+    LayerShellQt::Interface
 )
 
-file(GLOB TS_FILES translations/*.ts)
-qt5_create_translation(QM_FILES ${TS_FILES})
-add_custom_target(translations DEPENDS ${QM_FILES} SOURCES ${TS_FILES})
-add_dependencies(${PROJECT_NAME} translations)
-
-install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(FILES ${QM_FILES} DESTINATION /usr/share/${PROJECT_NAME}/translations)
-install(FILES cutefish-dock-list.conf DESTINATION /etc)
+install(TARGETS cutefish-dock DESTINATION ${KDE_INSTALL_BINDIR})
