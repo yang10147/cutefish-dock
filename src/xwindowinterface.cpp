@@ -34,6 +34,7 @@ void XWindowInterface::setViewStruts(QWindow *view, int dockHeight)
     anchors.setFlag(LayerShellQt::Window::AnchorRight);
     lsw->setAnchors(anchors);
 
+    // LayerShell exclusiveZone 用逻辑像素，compositor 自行处理 DPR
     lsw->setExclusiveZone(dockHeight);
     lsw->setKeyboardInteractivity(LayerShellQt::Window::KeyboardInteractivityNone);
     lsw->setMargins(QMargins(0, 0, 0, 0));
@@ -52,7 +53,7 @@ void XWindowInterface::updateExclusiveZone(QWindow *view, int dockHeight)
 {
     auto *lsw = layerShellWindow(view);
     if (!lsw) return;
-    lsw->setExclusiveZone(dockHeight);
+    lsw->setExclusiveZone(dockHeight);  // 逻辑像素
 }
 
 WId XWindowInterface::activeWindow()          { return 0; }

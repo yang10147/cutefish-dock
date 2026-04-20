@@ -61,7 +61,7 @@ Item {
         anchors.centerIn: parent
         width:  control.iconSize
         height: control.iconSize
-        source: control.iconName ? "image://icontheme/" + control.iconName : ""
+        source: control.iconName ? (control.iconName.startsWith("qrc:") || control.iconName.startsWith("/") ? control.iconName : "image://icontheme/" + control.iconName) : ""
         sourceSize: Qt.size(width, height)
         fillMode: Image.PreserveAspectFit
         visible: !dragStarted

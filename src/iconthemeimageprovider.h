@@ -1,14 +1,9 @@
-#ifndef ICONTHEMEIMAGEPROVIDER_H
-#define ICONTHEMEIMAGEPROVIDER_H
+#pragma once
+#include <QQuickImageProvider>
 
-#include <QtQuick/QQuickImageProvider>
-
-class IconThemeImageProvider : public QQuickImageProvider
-{
+class IconThemeImageProvider : public QQuickImageProvider {
 public:
     IconThemeImageProvider();
-
-    QPixmap requestPixmap(const QString &id, QSize *realSize, const QSize &requestedSize);
+    QImage requestImage(const QString &id, QSize *realSize,
+                        const QSize &requestedSize) override;
 };
-
-#endif // ICONTHEMEIMAGEPROVIDER_H
