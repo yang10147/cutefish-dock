@@ -31,6 +31,8 @@
 #include "applicationmodel.h"
 #include "docksettings.h"
 #include "mainwindow.h"
+#include "xwindowinterface.h"
+#include "dockadaptor.h"
 
 int main(int argc, char *argv[])
 {
@@ -61,8 +63,17 @@ int main(int argc, char *argv[])
 
     MainWindow w;
 
+    // /Dock 挂 DockAdaptor（供 launcher 的 pinned/add/remove 调用）
+    new DockAdaptor(&w);
     if (!QDBusConnection::sessionBus().registerObject(QStringLiteral("/Dock"), &w)) {
         return -1;
+    }
+    // /DockXWin 挂 XWindowInterface（供 KWin 脚本 DBus 调用）
+    if (!QDBusConnection::sessionBus().registerObject(
+            QStringLiteral("/DockXWin"),
+            XWindowInterface::instance(),
+            QDBusConnection::ExportAllSlots)) {
+        qWarning("Failed to register /DockXWin object");
     }
 
     return app.exec();

@@ -88,6 +88,11 @@ private:
     void onWindowRemoved(quint64 wid);
     void onActiveChanged(quint64 wid);
 
+    // KWin 脚本 DBus 桥接
+    void onWindowAddedByClass(const QString &resourceClass, quint64 pid);
+    void onWindowRemovedByClass(const QString &resourceClass, quint64 pid);
+    void onWindowActivatedByClass(const QString &resourceClass, quint64 pid);
+
 private:
     XWindowInterface *m_iface;
     SystemAppMonitor *m_sysAppMonitor;

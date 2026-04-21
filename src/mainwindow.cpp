@@ -245,7 +245,7 @@ void MainWindow::updateViewStruts()
             break;
         }
 
-        XWindowInterface::instance()->setViewStruts(this, exclusiveSize);
+        XWindowInterface::instance()->setViewStruts(this, exclusiveSize, m_settings->style());
     } else {
         clearViewStruts();
     }

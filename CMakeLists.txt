@@ -40,6 +40,8 @@ set(SOURCES
     src/xwindowinterface.cpp
     src/docksettings.cpp
     src/applicationmodel.cpp
+    src/kwinbridge.cpp
+    src/kwinbridge.cpp
     src/systemappmonitor.cpp
     src/systemappitem.cpp
     src/processprovider.cpp
